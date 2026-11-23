@@ -1,0 +1,12 @@
+AppleSkin for Sunrise (version 0.3.0)
+
+A port of AppleSkin by squeek502 and contributors.
+Original source: https://github.com/squeek502/AppleSkin
+Original licence: The Unlicense (public domain)
+
+Ported to Horizon by Jorungandr and to Sunrise by arismoko. The rules are written in Rust on
+Sunrise's mod API; no Java code is included. The icon sheet (`icons.png`), the tooltip outline
+(`tooltip_hunger_outline.png`) and the mod icon are the original's files, which its licence lets
+anyone copy. This port is distributed under the MIT licence (see LICENSE), copyright Jorungandr.
+
+Not affiliated with or endorsed by Mojang or Microsoft. Minecraft assets are not included.

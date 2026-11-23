@@ -1,7 +1,13 @@
 [package]
 name = "mod-appleskin"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2024"
+license = "MIT"
+description = "AppleSkin for Sunrise: held food, saturation and exhaustion on the HUD, and food values in tooltips"
+# Ported from: AppleSkin (squeek502/AppleSkin, The Unlicense).
+# Cargo's name and version are not the mod's identity: sunrise-mod.toml is.
+publish = false
 
 [dependencies]
-horizon-mod-api = { path = ".horizon/sdk/api/crates/horizon-mod-api" }
+# The pinned SDK's API crate, fetched into .sunrise/sdk/ by any `cargo sunrise-mod` command.
+sunrise-mod-api = { path = ".sunrise/sdk/api/crates/sunrise-mod-api" }

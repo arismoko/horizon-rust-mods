@@ -1,0 +1,13 @@
+id = "appleskin"
+name = "AppleSkin"
+version = "0.3.0"
+description = "Shows what the food in your hand restores, your saturation and exhaustion on the HUD, and the hunger and saturation of foods in their tooltips."
+authors = ["squeek502", "Jorungandr", "arismoko"]
+license = "MIT"
+credits = "AppleSkin is by squeek502. Ported to Horizon by Jorungandr, and to Sunrise by arismoko."
+homepage = "https://github.com/arismoko/horizon-rust-mods"
+side = "both"
+
+[native]
+game = "26.3"
+sunrise = "7cfdf81463ebb4a19705768273909f7f3f03601d"

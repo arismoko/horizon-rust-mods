@@ -1,0 +1,21 @@
+summary = "See what your food restores: HUD overlays for hunger, saturation, health and exhaustion, and food tooltips."
+description = """
+See what your food restores: HUD overlays for hunger, saturation, health and exhaustion, and food values in tooltips.
+
+A port of [AppleSkin](https://github.com/squeek502/AppleSkin) by squeek502 to [Sunrise](https://playsunrise.net) (Minecraft Java 26.3). The original is under The Unlicense; this port is MIT (see `NOTICE`). One native mod on Sunrise's mod API.
+
+What it does:
+
+- Shows the hunger, saturation and health the food in your hand would restore, flashing over the bars.
+- Draws your saturation over the hunger icons, and your exhaustion as a bar behind them.
+- Adds hunger and saturation rows to a food's tooltip, always or while holding Shift.
+- Shakes the overlays with the vanilla icons, and adds a `hunger, sat, exh` debug line.
+- `config/appleskin-client.toml`, with the original's options.
+
+Differences from the original:
+
+- The tooltip is added to foods in the item tag `appleskin:foods` (every vanilla food, and `c:foods`); a food from another mod needs adding to that tag with a data pack.
+- The overlays sit at vanilla's bar height, and always use normal hearts.
+- There is no in-game config screen and no events for other mods.
+"""
+categories = ["utility"]
