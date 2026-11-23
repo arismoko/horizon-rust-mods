@@ -14,18 +14,17 @@
 pub mod rules;
 
 use std::collections::HashMap;
-use std::ops::ControlFlow;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use mod_api::{
-    ClientHost, ClientTickPostEvent, Component, Config as ModConfig, ConfigContext, ConfigKind,
-    ConfigLoadingEvent, ConfigReloadingEvent, DebugEntry, DebugGroup, DrawContext, EffectCategory,
-    GameMode, GameRuleValue, GuiLayerPlacement, Hand, Hooks, Host, HostSide, HudMode,
-    IPayloadContext, IPayloadHandler, ItemPart, ItemStack, JavaString, LivingRef, PayloadBytes,
-    PayloadHandleError, PayloadId, PlayerLoggedInEvent, PlayerRef, PlayerTickPostEvent,
-    RegisterConfigsEvent, RegisterDebugEntriesEvent, RegisterGuiLayersEvent, Registrar,
-    RegistrationContext, ServerHost, ServerTickEvent, ServerTickPhase, Tag, Text,
-    TooltipComponentDrawEvent, TooltipComponentEvent,
+    ClientHost, ClientPlayerLoggingInEvent, ClientTickPostEvent, Component, Config as ModConfig,
+    ConfigContext, ConfigKind, ConfigLoadingEvent, ConfigReloadingEvent, DebugEntry, DebugGroup,
+    DrawContext, EffectCategory, GameMode, GameRuleValue, GuiLayerPlacement, Hand, Hooks, Host,
+    HostSide, HudMode, IPayloadContext, IPayloadHandler, ItemPart, ItemStack, JavaString,
+    LivingRef, PayloadBytes, PayloadHandleError, PayloadId, PlayerLoggedInEvent,
+    PlayerLoggedOutEvent, PlayerRef, PlayerTickPostEvent, RegisterConfigsEvent,
+    RegisterDebugEntriesEvent, RegisterGuiLayersEvent, Registrar, RegistrationContext, ServerHost,
+    ServerTickEvent, ServerTickPhase, Tag, Text, TooltipComponentDrawEvent, TooltipComponentEvent,
 };
 use rules::{BarState, Body, Flash, Held, Offsets, Settings, Sprite};
 
@@ -647,6 +646,20 @@ impl Hooks for Mod {
         send(host, player, rules::CHANNEL_NATURAL_REGENERATION, flag);
     }
 
+    fn player_logged_out(&self, _: &mut dyn ServerHost, event: &mut PlayerLoggedOutEvent<'_>) {
+        lock(&SENT)
+            .get_or_insert_with(HashMap::new)
+            .remove(&event.player);
+    }
+
+    fn client_player_logging_in(&self, _: &mut dyn ClientHost, _: &mut ClientPlayerLoggingInEvent) {
+        *lock(&SYNCED) = Synced {
+            saturation: None,
+            exhaustion: None,
+            natural_regeneration: true,
+        };
+    }
+
     fn server_tick(&self, host: &mut dyn ServerHost, event: &mut ServerTickEvent<'_>) {
         if !matches!(event.phase, ServerTickPhase::ServerTickEnd { .. }) {
             return;
@@ -661,20 +674,7 @@ impl Hooks for Mod {
         if !changed {
             return;
         }
-        let mut players = Vec::new();
-        for level in [
-            "minecraft:overworld",
-            "minecraft:the_nether",
-            "minecraft:the_end",
-        ] {
-            let Some(level) = host.level(level) else {
-                continue;
-            };
-            let _ = level.visit_online_players(&*host, &mut |player| {
-                players.push(player);
-                ControlFlow::Continue(())
-            });
-        }
+        let players = host.players().server_players();
         for player in players {
             send(
                 host,
