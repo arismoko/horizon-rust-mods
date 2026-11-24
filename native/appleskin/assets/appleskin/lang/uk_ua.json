@@ -1,0 +1,11 @@
+{
+  "appleskin.configuration.showFoodValuesInTooltip": "Показувати значення їжі у підказці",
+  "appleskin.configuration.showFoodValuesInTooltipAlways": "Завжди показувати значення їжі у підказці",
+  "appleskin.configuration.showFoodValuesHudOverlay": "Показувати відновлену ситність при утримуванні їжі",
+  "appleskin.configuration.showFoodValuesHudOverlayWhenOffhand": "Показувати при утримуванні їжі у іншій руці",
+  "appleskin.configuration.showFoodHealthHudOverlay": "Показувати приблизне відновлення здоров'я",
+  "appleskin.configuration.showFoodExhaustionHudUnderlay": "Показувати виснаження",
+  "appleskin.configuration.showSaturationHudOverlay": "Показувати насичення",
+  "appleskin.configuration.showVanillaAnimationsOverlay": "Анімувати іконки згідно зі стандартними іконками Minecraft",
+  "appleskin.configuration.maxHudOverlayFlashAlpha": "Максимальна непрозорість миготіння іконок"
+}

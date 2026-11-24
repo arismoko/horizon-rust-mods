@@ -6,7 +6,8 @@ Original licence: The Unlicense (public domain)
 
 Ported to Horizon by Jorungandr and to Sunrise by arismoko. The rules are written in Rust on
 Sunrise's mod API; no Java code is included. The icon sheet (`icons.png`), the tooltip outline
-(`tooltip_hunger_outline.png`) and the mod icon are the original's files, which its licence lets
+(`tooltip_hunger_outline.png`), the options' labels and tooltips in `lang/` and the mod icon are the
+original's files, which its licence lets
 anyone copy. This port is distributed under the MIT licence (see LICENSE), copyright Jorungandr.
 
 Not affiliated with or endorsed by Mojang or Microsoft. Minecraft assets are not included.
