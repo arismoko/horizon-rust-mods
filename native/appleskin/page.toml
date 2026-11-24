@@ -10,12 +10,14 @@ What it does:
 - Draws your saturation over the hunger icons, and your exhaustion as a bar behind them.
 - Adds hunger and saturation rows to a food's tooltip, always or while holding Shift.
 - Shakes the overlays with the vanilla icons, and adds a `hunger, sat, exh` debug line.
-- `config/appleskin-client.toml`, with the original's options.
+- The original's options, on the mod's page in Options > Mods.
 
 Differences from the original:
 
-- The overlays sit at vanilla's bar height, and always use normal hearts.
-- There is no in-game config screen and no events for other mods.
+- The overlays sit at vanilla's bar height ([sunrise-org/sunrise#5020](https://github.com/sunrise-org/sunrise/issues/5020)) and always use normal hearts ([sunrise-org/sunrise#5021](https://github.com/sunrise-org/sunrise/issues/5021)).
+- The overlays hide while riding any living mount, not only those with a health bar ([sunrise-org/sunrise#5022](https://github.com/sunrise-org/sunrise/issues/5022)).
+- The debug line is in the debug screen's position group, not a group of its own ([sunrise-org/sunrise#5023](https://github.com/sunrise-org/sunrise/issues/5023)).
+- There are no events for other mods ([sunrise-org/sunrise#5137](https://github.com/sunrise-org/sunrise/issues/5137)).
 """
 categories = ["utility"]
 

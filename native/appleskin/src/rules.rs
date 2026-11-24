@@ -1,13 +1,68 @@
-//! AppleSkin's rules as plain Rust: the config, what a food restores, how many hearts that heals,
+//! AppleSkin's rules as plain Rust: the options, what a food restores, how many hearts that heals,
 //! where the HUD icons go and what the tooltip shows. Nothing here touches the game, so the unit
 //! tests cover it.
 
-use std::collections::HashMap;
-
 use mod_api::Tag;
 
-/// `config/appleskin-client.toml` as written when it is missing.
-pub const DEFAULT_CLIENT: &str = "[client]\n\t#If true, shows the hunger and saturation values of food in its tooltip while holding SHIFT\n\tshowFoodValuesInTooltip = true\n\t#If true, shows the hunger and saturation values of food in its tooltip automatically (without needing to hold SHIFT)\n\tshowFoodValuesInTooltipAlways = true\n\t#If true, shows your current saturation level overlayed on the hunger bar\n\tshowSaturationHudOverlay = true\n\t#If true, shows the hunger (and saturation if showSaturationHudOverlay is true) that would be restored by food you are currently holding\n\tshowFoodValuesHudOverlay = true\n\t#If true, enables the hunger/saturation/health overlays for food in your off-hand\n\tshowFoodValuesHudOverlayWhenOffhand = true\n\t#If true, shows your food exhaustion as a progress bar behind the hunger bar\n\tshowFoodExhaustionHudUnderlay = true\n\t#If true, shows estimated health restored by food on the health bar\n\tshowFoodHealthHudOverlay = true\n\t#If true, health/hunger overlay will shake to match Minecraft's icon animations\n\tshowVanillaAnimationsOverlay = true\n\t#Alpha value of the flashing icons at their most visible point (1.0 = fully opaque, 0.0 = fully transparent)\n\t#Range: 0.0 ~ 1.0\n\tmaxHudOverlayFlashAlpha = 0.65\n";
+/// The client options' settings on the mod's page in Options > Mods: key, the original's
+/// config name (the last part of its translation keys) and default.
+pub const TOOLTIP_SHIFT: (&str, &str, bool) = (
+    "show_food_values_in_tooltip",
+    "showFoodValuesInTooltip",
+    true,
+);
+pub const TOOLTIP_ALWAYS: (&str, &str, bool) = (
+    "show_food_values_in_tooltip_always",
+    "showFoodValuesInTooltipAlways",
+    true,
+);
+pub const SATURATION_OVERLAY: (&str, &str, bool) = (
+    "show_saturation_hud_overlay",
+    "showSaturationHudOverlay",
+    true,
+);
+pub const FOOD_OVERLAY: (&str, &str, bool) = (
+    "show_food_values_hud_overlay",
+    "showFoodValuesHudOverlay",
+    true,
+);
+pub const FOOD_OVERLAY_OFFHAND: (&str, &str, bool) = (
+    "show_food_values_hud_overlay_when_offhand",
+    "showFoodValuesHudOverlayWhenOffhand",
+    true,
+);
+pub const EXHAUSTION_UNDERLAY: (&str, &str, bool) = (
+    "show_food_exhaustion_hud_underlay",
+    "showFoodExhaustionHudUnderlay",
+    true,
+);
+pub const HEALTH_OVERLAY: (&str, &str, bool) = (
+    "show_food_health_hud_overlay",
+    "showFoodHealthHudOverlay",
+    true,
+);
+pub const ANIMATIONS: (&str, &str, bool) = (
+    "show_vanilla_animations_overlay",
+    "showVanillaAnimationsOverlay",
+    true,
+);
+/// The toggles in the original's config order.
+pub const TOGGLES: [(&str, &str, bool); 8] = [
+    TOOLTIP_SHIFT,
+    TOOLTIP_ALWAYS,
+    SATURATION_OVERLAY,
+    FOOD_OVERLAY,
+    FOOD_OVERLAY_OFFHAND,
+    EXHAUSTION_UNDERLAY,
+    HEALTH_OVERLAY,
+    ANIMATIONS,
+];
+/// `maxHudOverlayFlashAlpha`: 0.0 to 1.0, default 0.65.
+pub const FLASH_ALPHA: (&str, &str, f64) = (
+    "max_hud_overlay_flash_alpha",
+    "maxHudOverlayFlashAlpha",
+    0.65,
+);
 
 /// The client options (`ModConfig`).
 #[derive(Clone, Debug, PartialEq)]
@@ -23,65 +78,23 @@ pub struct Settings {
     pub max_flash_alpha: f32,
 }
 
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            tooltip_shift: true,
-            tooltip_always: true,
-            saturation_overlay: true,
-            food_overlay: true,
-            food_overlay_offhand: true,
-            exhaustion_underlay: true,
-            health_overlay: true,
-            animations: true,
-            max_flash_alpha: 0.65,
-        }
-    }
-}
-
-/// Every `key = value` of the file, the value as written, the last of a key winning.
-fn values(text: &str) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    for raw in text.lines() {
-        let line = raw.trim();
-        if line.starts_with('#') || line.starts_with('[') {
-            continue;
-        }
-        if let Some((key, value)) = line.split_once('=') {
-            let value = value.split('#').next().unwrap_or("").trim();
-            map.insert(key.trim().to_owned(), value.to_owned());
-        }
-    }
-    map
-}
-
 impl Settings {
-    /// Reads the file's text. A missing, unreadable or out-of-range value keeps its default.
-    pub fn parse(text: &str) -> Self {
-        let map = values(text);
-        let flag = |key: &str, default: bool| match map.get(key).map(String::as_str) {
-            Some("true") => true,
-            Some("false") => false,
-            _ => default,
-        };
-        let base = Self::default();
+    /// The options as `toggle` and `range` read them: the player's choice, else the default.
+    pub fn read(
+        toggle: impl Fn(&str) -> Option<bool>,
+        range: impl Fn(&str) -> Option<f64>,
+    ) -> Self {
+        let flag = |(key, _, default): (&str, &str, bool)| toggle(key).unwrap_or(default);
         Self {
-            tooltip_shift: flag("showFoodValuesInTooltip", base.tooltip_shift),
-            tooltip_always: flag("showFoodValuesInTooltipAlways", base.tooltip_always),
-            saturation_overlay: flag("showSaturationHudOverlay", base.saturation_overlay),
-            food_overlay: flag("showFoodValuesHudOverlay", base.food_overlay),
-            food_overlay_offhand: flag(
-                "showFoodValuesHudOverlayWhenOffhand",
-                base.food_overlay_offhand,
-            ),
-            exhaustion_underlay: flag("showFoodExhaustionHudUnderlay", base.exhaustion_underlay),
-            health_overlay: flag("showFoodHealthHudOverlay", base.health_overlay),
-            animations: flag("showVanillaAnimationsOverlay", base.animations),
-            max_flash_alpha: map
-                .get("maxHudOverlayFlashAlpha")
-                .and_then(|v| v.parse::<f32>().ok())
-                .filter(|v| (0.0..=1.0).contains(v))
-                .unwrap_or(base.max_flash_alpha),
+            tooltip_shift: flag(TOOLTIP_SHIFT),
+            tooltip_always: flag(TOOLTIP_ALWAYS),
+            saturation_overlay: flag(SATURATION_OVERLAY),
+            food_overlay: flag(FOOD_OVERLAY),
+            food_overlay_offhand: flag(FOOD_OVERLAY_OFFHAND),
+            exhaustion_underlay: flag(EXHAUSTION_UNDERLAY),
+            health_overlay: flag(HEALTH_OVERLAY),
+            animations: flag(ANIMATIONS),
+            max_flash_alpha: range(FLASH_ALPHA.0).unwrap_or(FLASH_ALPHA.2) as f32,
         }
     }
 
@@ -862,20 +875,21 @@ mod tests {
     }
 
     #[test]
-    fn config_defaults_match_the_file_and_bad_values_fall_back() {
-        assert_eq!(Settings::parse(DEFAULT_CLIENT), Settings::default());
-        let s = Settings::parse(
-            "showFoodValuesInTooltipAlways = false # no\nmaxHudOverlayFlashAlpha = 1.5\nshowSaturationHudOverlay = maybe\n",
+    fn options_read_the_players_choice_else_the_default() {
+        let unset = Settings::read(|_| None, |_| None);
+        assert!(unset.tooltip_shift && unset.animations);
+        assert_eq!(unset.max_flash_alpha, 0.65);
+        let s = Settings::read(
+            |key| (key == "show_food_values_in_tooltip_always").then_some(false),
+            |_| Some(0.25),
         );
-        assert!(!s.tooltip_always);
-        assert_eq!(s.max_flash_alpha, 0.65);
-        assert!(s.saturation_overlay);
-        assert!(Settings::parse("maxHudOverlayFlashAlpha = 0.0\n").max_flash_alpha == 0.0);
+        assert!(!s.tooltip_always && s.tooltip_shift);
+        assert_eq!(s.max_flash_alpha, 0.25);
     }
 
     #[test]
     fn tooltip_is_wanted_with_shift_or_always() {
-        let mut s = Settings::default();
+        let mut s = Settings::read(|_| None, |_| None);
         assert!(s.tooltip_wanted(false));
         s.tooltip_always = false;
         assert!(!s.tooltip_wanted(false));

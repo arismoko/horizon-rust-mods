@@ -14,12 +14,12 @@ A port of [AppleSkin](https://github.com/squeek502/AppleSkin) by squeek502 to [S
 - **Vanilla shaking.** The overlays shake with the icons when you are hungry with no saturation, or at low health.
 - **Debug screen.** A `hunger, sat, exh` line.
 - **Sync.** The server sends each client its exact saturation and exhaustion, and whether natural regeneration is on.
-- `config/appleskin-client.toml`, reloaded live: the same options as the original.
+- The original's options on the mod's page in Options > Mods, applied as you change them.
 
 ## Differences from the original
 
-- The HUD overlays sit at vanilla's bar height, 39 pixels above the bottom of the screen, whatever the bars above them hold.
-- Hearts are always drawn as normal hearts; the hardcore ones are not used.
-- The overlays hide while riding any living mount, not only those with a health bar.
-- The debug line is in the position group of the debug screen, not a group of its own.
-- The original's events for other mods and its in-game config screen are not part of this version.
+- The HUD overlays sit at vanilla's bar height, 39 pixels above the bottom of the screen, whatever the bars above them hold ([sunrise-org/sunrise#5020](https://github.com/sunrise-org/sunrise/issues/5020)).
+- Hearts are always drawn as normal hearts; the hardcore ones are not used ([sunrise-org/sunrise#5021](https://github.com/sunrise-org/sunrise/issues/5021)).
+- The overlays hide while riding any living mount, not only those with a health bar ([sunrise-org/sunrise#5022](https://github.com/sunrise-org/sunrise/issues/5022)).
+- The debug line is in the position group of the debug screen, not a group of its own ([sunrise-org/sunrise#5023](https://github.com/sunrise-org/sunrise/issues/5023)).
+- The original's events for other mods are not part of this version ([sunrise-org/sunrise#5137](https://github.com/sunrise-org/sunrise/issues/5137)).

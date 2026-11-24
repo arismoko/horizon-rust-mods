@@ -10,7 +10,7 @@
 //! | `client_tick_post` | this module | the flashing alpha |
 //! | `player_tick_post`, `player_logged_in`, `server_tick` | [`sync`] | saturation, exhaustion and natural regeneration sent to clients |
 //! | `register_debug_entries` | this module | the `hunger, sat, exh` line of the debug screen |
-//! | `register_configs`, `config_loading`, `config_reloading` | this module | `config/appleskin-client.toml` |
+//! | `register` | this module | the client options, on the mod's page in Options > Mods |
 
 pub mod rules;
 
@@ -19,19 +19,17 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use mod_api::{
     ClientHost, ClientPlayerLoggingInEvent, ClientTickPostEvent, ClientTooltipComponent, Component,
-    Config as ModConfig, ConfigContext, ConfigKind, ConfigLoadingEvent, ConfigReloadingEvent,
     DebugEntry, DebugGroup, DrawContext, EffectCategory, Flow, GameMode, GameRuleValue,
     GuiLayerPlacement, Hand, Hooks, Host, HostSide, HudMode, IPayloadContext, IPayloadHandler,
     ItemStack, JavaString, LivingRef, PayloadBytes, PayloadHandleError, PayloadId,
     PlayerLoggedInEvent, PlayerLoggedOutEvent, PlayerRef, PlayerTickPostEvent,
-    RegisterClientTooltipComponentFactoriesEvent, RegisterConfigsEvent, RegisterDebugEntriesEvent,
+    RegisterClientTooltipComponentFactoriesEvent, RegisterDebugEntriesEvent,
     RegisterGuiLayersEvent, Registrar, RegistrationContext, RenderTooltipGatherComponentsEvent,
-    ServerHost, ServerTickEvent, ServerTickPhase, Tag, Text, TooltipComponent,
+    ServerHost, ServerTickEvent, ServerTickPhase, SettingSpec, Tag, Text, TooltipComponent,
     TooltipComponentData, TooltipElement, TooltipFont,
 };
 use rules::{BarState, Body, Flash, Held, Offsets, Settings, Sprite};
 
-const MOD: &str = "appleskin";
 const FOOD: &str = "minecraft:food";
 const CONSUMABLE: &str = "minecraft:consumable";
 const TOOLTIP_DISPLAY: &str = "minecraft:tooltip_display";
@@ -44,7 +42,6 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-static SETTINGS: Mutex<Option<Settings>> = Mutex::new(None);
 static OFFSETS: Mutex<Option<Offsets>> = Mutex::new(None);
 static FLASH: Mutex<Option<Flash>> = Mutex::new(None);
 /// The held-food query of the last HUD tick it ran for.
@@ -62,16 +59,24 @@ struct Synced {
     natural_regeneration: bool,
 }
 
-fn settings() -> Settings {
-    lock(&SETTINGS)
-        .get_or_insert_with(Settings::default)
-        .clone()
+/// The client options (`ModConfig.CLIENT`), as the player set them in Options > Mods.
+fn settings(host: &dyn ClientHost) -> Settings {
+    Settings::read(|key| host.setting_bool(key), |key| host.setting_f64(key))
 }
 
-fn apply(mod_id: &str, kind: ConfigKind, text: &str) {
-    if mod_id == MOD && kind == ConfigKind::Client {
-        *lock(&SETTINGS) = Some(Settings::parse(text));
+/// The options on the mod's page, labelled and explained as the original's config screen does.
+fn register_settings(r: &mut dyn Registrar) {
+    let label = |name: &str| format!("appleskin.configuration.{name}");
+    let tooltip = |name: &str| format!("appleskin.configuration.{name}.tooltip");
+    for (key, name, default) in rules::TOGGLES {
+        let _ = r.register_setting(
+            SettingSpec::toggle(key, label(name), default).tooltip(tooltip(name)),
+        );
     }
+    let (key, name, default) = rules::FLASH_ALPHA;
+    let _ = r.register_setting(
+        SettingSpec::range(key, label(name), 0.0, 1.0, 0.05, default).tooltip(tooltip(name)),
+    );
 }
 
 // ---- reading the stack ----------------------------------------------------------------------
@@ -257,7 +262,7 @@ mod layers {
 
     /// `HealthOverlay`: the hearts the held food would heal.
     fn health(host: &dyn ClientHost, draw: &mut dyn DrawContext) {
-        let settings = settings();
+        let settings = settings(host);
         let Some(hud) = hud(host, draw) else { return };
         if hud.on_living_mount(host) {
             return;
@@ -313,7 +318,7 @@ mod layers {
 
     /// `HungerOverlay`: the hunger icons the held food would fill.
     fn hunger(host: &dyn ClientHost, draw: &mut dyn DrawContext) {
-        let settings = settings();
+        let settings = settings(host);
         let Some(hud) = hud(host, draw) else { return };
         if hud.on_living_mount(host) || !settings.food_overlay {
             return;
@@ -338,7 +343,7 @@ mod layers {
 
     /// `SaturationOverlay`: the saturation, and what the held food adds to it.
     fn saturation(host: &dyn ClientHost, draw: &mut dyn DrawContext) {
-        let settings = settings();
+        let settings = settings(host);
         let Some(hud) = hud(host, draw) else { return };
         if hud.on_living_mount(host) || !settings.saturation_overlay {
             return;
@@ -373,7 +378,7 @@ mod layers {
 
     /// `ExhaustionOverlay`: the bar behind the food icons.
     fn exhaustion(host: &dyn ClientHost, draw: &mut dyn DrawContext) {
-        let settings = settings();
+        let settings = settings(host);
         let Some(hud) = hud(host, draw) else { return };
         if hud.on_living_mount(host) || !settings.exhaustion_underlay {
             return;
@@ -424,7 +429,7 @@ impl FoodTooltip {
                 _ => None,
             })
             .unwrap_or(false);
-        if hidden || !settings().tooltip_wanted(host.modifiers().shift()) {
+        if hidden || !settings(host).tooltip_wanted(host.modifiers().shift()) {
             return None;
         }
         let held = held_food(host, stack)?;
@@ -521,6 +526,7 @@ struct Mod;
 #[mod_api::sunrise_mod]
 impl Hooks for Mod {
     fn register(&self, r: &mut dyn Registrar, _: &RegistrationContext) {
+        register_settings(r);
         let mut payloads = r.payload_handlers();
         let mut view = payloads.registrar("1");
         for channel in [
@@ -590,32 +596,8 @@ impl Hooks for Mod {
         );
     }
 
-    fn register_configs(&self, _: &dyn ConfigContext, event: &mut RegisterConfigsEvent<'_>) {
-        event.configs.push(ModConfig::new(
-            MOD,
-            ConfigKind::Client,
-            rules::DEFAULT_CLIENT,
-        ));
-    }
-
-    fn config_loading(&self, _: &dyn ConfigContext, event: &mut ConfigLoadingEvent<'_>) {
-        apply(
-            event.config.mod_id.as_str(),
-            event.config.kind,
-            &event.config.text,
-        );
-    }
-
-    fn config_reloading(&self, _: HostSide, event: &mut ConfigReloadingEvent<'_>) {
-        apply(
-            event.config.mod_id.as_str(),
-            event.config.kind,
-            &event.config.text,
-        );
-    }
-
-    fn client_tick_post(&self, _: &mut dyn ClientHost, _: &mut ClientTickPostEvent) {
-        let max = settings().max_flash_alpha;
+    fn client_tick_post(&self, host: &mut dyn ClientHost, _: &mut ClientTickPostEvent) {
+        let max = settings(&*host).max_flash_alpha;
         lock(&FLASH).get_or_insert_with(Flash::default).step(max);
     }
 
