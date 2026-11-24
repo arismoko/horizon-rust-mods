@@ -18,3 +18,11 @@ Differences from the original:
 - There is no in-game config screen and no events for other mods.
 """
 categories = ["utility"]
+
+[[screenshots]]
+path = "page/tooltip.png"
+caption = "With Shift held, a food tooltip shows the hunger and saturation it restores."
+
+[[screenshots]]
+path = "page/hud.png"
+caption = "Holding food, the HUD flashes the hunger it would restore over the saturation overlay."
