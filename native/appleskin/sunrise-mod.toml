@@ -1,6 +1,6 @@
 id = "appleskin"
 name = "AppleSkin"
-version = "0.3.1"
+version = "0.3.2"
 description = "Shows what the food in your hand restores, your saturation and exhaustion on the HUD, and the hunger and saturation of foods in their tooltips."
 authors = ["squeek502", "Jorungandr", "arismoko"]
 license = "MIT"
