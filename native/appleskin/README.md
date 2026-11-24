@@ -23,3 +23,4 @@ A port of [AppleSkin](https://github.com/squeek502/AppleSkin) by squeek502 to [S
 - The overlays hide while riding any living mount, not only those with a health bar ([sunrise-org/sunrise#5022](https://github.com/sunrise-org/sunrise/issues/5022)).
 - The debug line is in the position group of the debug screen, not a group of its own ([sunrise-org/sunrise#5023](https://github.com/sunrise-org/sunrise/issues/5023)).
 - The original's events for other mods are not part of this version ([sunrise-org/sunrise#5137](https://github.com/sunrise-org/sunrise/issues/5137)).
+- The options that switch on and off show no tooltip on the mod's settings page; the sliders do ([sunrise-org/sunrise#5360](https://github.com/sunrise-org/sunrise/issues/5360)).

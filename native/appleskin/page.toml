@@ -18,6 +18,7 @@ Differences from the original:
 - The overlays hide while riding any living mount, not only those with a health bar ([sunrise-org/sunrise#5022](https://github.com/sunrise-org/sunrise/issues/5022)).
 - The debug line is in the debug screen's position group, not a group of its own ([sunrise-org/sunrise#5023](https://github.com/sunrise-org/sunrise/issues/5023)).
 - There are no events for other mods ([sunrise-org/sunrise#5137](https://github.com/sunrise-org/sunrise/issues/5137)).
+- On/off options show no tooltip on the settings page ([sunrise-org/sunrise#5360](https://github.com/sunrise-org/sunrise/issues/5360)).
 """
 categories = ["utility"]
 
@@ -28,3 +29,7 @@ caption = "With Shift held, a food tooltip shows the hunger and saturation it re
 [[screenshots]]
 path = "page/hud.png"
 caption = "Holding food, the HUD flashes the hunger it would restore over the saturation overlay."
+
+[[screenshots]]
+path = "page/settings.png"
+caption = "Its options, on the mod's page in Options > Mods."
