@@ -18,7 +18,6 @@ A port of [AppleSkin](https://github.com/squeek502/AppleSkin) by squeek502 to [S
 
 ## Differences from the original
 
-- The tooltip is added to the foods named in the item tag `appleskin:foods` (every vanilla food, and `c:foods` when present). A food from another mod or data pack that is in neither tag shows no tooltip; add it to `appleskin:foods` with a data pack.
 - The HUD overlays sit at vanilla's bar height, 39 pixels above the bottom of the screen, whatever the bars above them hold.
 - Hearts are always drawn as normal hearts; the hardcore ones are not used.
 - The overlays hide while riding any living mount, not only those with a health bar.

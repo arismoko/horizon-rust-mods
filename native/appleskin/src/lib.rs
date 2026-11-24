@@ -4,8 +4,9 @@
 //! | Moment | Where | What it does |
 //! |---|---|---|
 //! | `register_gui_layers` | [`layers`] | health, hunger, saturation and exhaustion layers beside vanilla's |
-//! | `register` | this module | the food tooltip image on every food in `appleskin:foods`, the sync payloads |
-//! | `tooltip_component`, `tooltip_component_draw` | [`FoodTooltip`] | the hunger and saturation rows |
+//! | `register` | this module | the sync payloads |
+//! | `render_tooltip_gather_components` | this module | a [`FoodTooltip`] after the lines of every food's tooltip |
+//! | `register_client_tooltip_component_factories` | [`ClientFoodTooltip`] | the hunger and saturation rows |
 //! | `client_tick_post` | this module | the flashing alpha |
 //! | `player_tick_post`, `player_logged_in`, `server_tick` | [`sync`] | saturation, exhaustion and natural regeneration sent to clients |
 //! | `register_debug_entries` | this module | the `hunger, sat, exh` line of the debug screen |
@@ -17,14 +18,16 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use mod_api::{
-    ClientHost, ClientPlayerLoggingInEvent, ClientTickPostEvent, Component, Config as ModConfig,
-    ConfigContext, ConfigKind, ConfigLoadingEvent, ConfigReloadingEvent, DebugEntry, DebugGroup,
-    DrawContext, EffectCategory, GameMode, GameRuleValue, GuiLayerPlacement, Hand, Hooks, Host,
-    HostSide, HudMode, IPayloadContext, IPayloadHandler, ItemPart, ItemStack, JavaString,
-    LivingRef, PayloadBytes, PayloadHandleError, PayloadId, PlayerLoggedInEvent,
-    PlayerLoggedOutEvent, PlayerRef, PlayerTickPostEvent, RegisterConfigsEvent,
-    RegisterDebugEntriesEvent, RegisterGuiLayersEvent, Registrar, RegistrationContext, ServerHost,
-    ServerTickEvent, ServerTickPhase, Tag, Text, TooltipComponentDrawEvent, TooltipComponentEvent,
+    ClientHost, ClientPlayerLoggingInEvent, ClientTickPostEvent, ClientTooltipComponent, Component,
+    Config as ModConfig, ConfigContext, ConfigKind, ConfigLoadingEvent, ConfigReloadingEvent,
+    DebugEntry, DebugGroup, DrawContext, EffectCategory, Flow, GameMode, GameRuleValue,
+    GuiLayerPlacement, Hand, Hooks, Host, HostSide, HudMode, IPayloadContext, IPayloadHandler,
+    ItemStack, JavaString, LivingRef, PayloadBytes, PayloadHandleError, PayloadId,
+    PlayerLoggedInEvent, PlayerLoggedOutEvent, PlayerRef, PlayerTickPostEvent,
+    RegisterClientTooltipComponentFactoriesEvent, RegisterConfigsEvent, RegisterDebugEntriesEvent,
+    RegisterGuiLayersEvent, Registrar, RegistrationContext, RenderTooltipGatherComponentsEvent,
+    ServerHost, ServerTickEvent, ServerTickPhase, Tag, Text, TooltipComponent,
+    TooltipComponentData, TooltipElement, TooltipFont,
 };
 use rules::{BarState, Body, Flash, Held, Offsets, Settings, Sprite};
 
@@ -406,12 +409,15 @@ mod layers {
 
 // ---- the tooltip ---------------------------------------------------------------------------
 
-/// The hunger and saturation rows under a food's name (`TooltipOverlayHandler`).
-struct FoodTooltip;
+/// The hunger and saturation rows under a food's name (`FoodTooltip`, the tooltip component
+/// data `TooltipOverlayHandler` adds).
+struct FoodTooltip(rules::Tooltip);
+
+impl TooltipComponentData for FoodTooltip {}
 
 impl FoodTooltip {
     /// `shouldShowTooltip`, then `FoodTooltip` for the stack.
-    fn of(host: &dyn ClientHost, stack: &ItemStack) -> Option<rules::Tooltip> {
+    fn of(host: &dyn ClientHost, stack: &ItemStack) -> Option<Self> {
         let hidden = component(host, stack, TOOLTIP_DISPLAY)
             .and_then(|display| match display.get("hide_tooltip") {
                 Some(Tag::Byte(v)) => Some(*v != 0),
@@ -423,35 +429,36 @@ impl FoodTooltip {
         }
         let held = held_food(host, stack)?;
         let tooltip = rules::Tooltip::new(held.food, held.food, held.rotten);
-        tooltip.shown().then_some(tooltip)
+        tooltip.shown().then_some(Self(tooltip))
     }
 }
 
-#[mod_api::sunrise_part]
-impl ItemPart for FoodTooltip {
-    fn tooltip_component(
-        &self,
-        host: &dyn ClientHost,
-        event: &mut TooltipComponentEvent<'_>,
-    ) -> Option<[f32; 2]> {
-        let tooltip = Self::of(host, event.stack)?;
-        let width = tooltip.width(&|text| host.text_width(&Text::literal(text)) as f32);
-        Some([width, rules::Tooltip::HEIGHT])
+/// `ClientFoodTooltipComponent`: measures and draws a [`FoodTooltip`].
+struct ClientFoodTooltip(rules::Tooltip);
+
+impl ClientTooltipComponent for ClientFoodTooltip {
+    fn height(&self, _: &dyn TooltipFont) -> i32 {
+        rules::Tooltip::HEIGHT as i32
     }
 
-    fn tooltip_component_draw(
+    fn width(&self, font: &dyn TooltipFont) -> i32 {
+        self.0
+            .width(&|text| font.width(&Text::literal(text)).unwrap_or(0) as f32) as i32
+    }
+
+    fn draw_image(
         &self,
-        host: &dyn ClientHost,
-        event: &mut TooltipComponentDrawEvent<'_>,
+        _: &dyn TooltipFont,
+        x: i32,
+        y: i32,
+        _: i32,
+        _: i32,
+        draw: &mut dyn DrawContext,
     ) {
-        let Some(tooltip) = Self::of(host, event.stack) else {
-            return;
-        };
-        let [x, y] = event.origin;
-        let (sprites, texts) = tooltip.draw(x, y);
-        draw_sprites(event.draw, &sprites);
+        let (sprites, texts) = self.0.draw(x as f32, y as f32);
+        draw_sprites(draw, &sprites);
         for (text, at, scale, argb) in texts {
-            event.draw.text_scaled(&text, at, scale, argb, true);
+            draw.text_scaled(&text, at, scale, argb, true);
         }
     }
 }
@@ -526,7 +533,30 @@ impl Hooks for Mod {
                 Some(Arc::new(FromServer(channel))),
             );
         }
-        r.item_part_tag("appleskin:foods", FoodTooltip);
+    }
+
+    fn register_client_tooltip_component_factories(
+        &self,
+        _: &RegistrationContext,
+        event: &mut RegisterClientTooltipComponentFactoriesEvent<'_>,
+    ) {
+        event
+            .factories
+            .register(|data: &FoodTooltip| ClientFoodTooltip(data.0.clone()));
+    }
+
+    /// `TooltipOverlayHandler.gatherTooltips`: the food rows go after the tooltip's lines.
+    fn render_tooltip_gather_components(
+        &self,
+        host: &dyn ClientHost,
+        event: &mut RenderTooltipGatherComponentsEvent<'_>,
+    ) -> Flow {
+        if let Some(tooltip) = FoodTooltip::of(host, event.stack) {
+            event
+                .elements
+                .push(TooltipElement::Component(TooltipComponent::custom(tooltip)));
+        }
+        Flow::Continue
     }
 
     fn register_gui_layers(&self, _: &RegistrationContext, event: &mut RegisterGuiLayersEvent<'_>) {

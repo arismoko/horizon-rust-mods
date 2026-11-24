@@ -14,7 +14,6 @@ What it does:
 
 Differences from the original:
 
-- The tooltip is added to foods in the item tag `appleskin:foods` (every vanilla food, and `c:foods`); a food from another mod needs adding to that tag with a data pack.
 - The overlays sit at vanilla's bar height, and always use normal hearts.
 - There is no in-game config screen and no events for other mods.
 """
