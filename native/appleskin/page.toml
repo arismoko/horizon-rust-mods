@@ -14,11 +14,7 @@ What it does:
 
 Differences from the original:
 
-- The overlays sit at vanilla's bar height ([sunrise-org/sunrise#5020](https://github.com/sunrise-org/sunrise/issues/5020)) and always use normal hearts ([sunrise-org/sunrise#5021](https://github.com/sunrise-org/sunrise/issues/5021)).
-- The overlays hide while riding any living mount, not only those with a health bar ([sunrise-org/sunrise#5022](https://github.com/sunrise-org/sunrise/issues/5022)).
-- The debug line is in the debug screen's position group, not a group of its own ([sunrise-org/sunrise#5023](https://github.com/sunrise-org/sunrise/issues/5023)).
 - There are no events for other mods ([sunrise-org/sunrise#5137](https://github.com/sunrise-org/sunrise/issues/5137)).
-- On/off options show no tooltip on the settings page ([sunrise-org/sunrise#5360](https://github.com/sunrise-org/sunrise/issues/5360)).
 """
 categories = ["utility"]
 
