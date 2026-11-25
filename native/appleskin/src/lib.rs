@@ -15,18 +15,19 @@
 pub mod rules;
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use mod_api::{
     ClientHost, ClientPlayerLoggingInEvent, ClientTickPostEvent, ClientTooltipComponent, Component,
     DebugEntry, DebugGroup, DrawContext, EffectCategory, Flow, GameMode, GameRuleValue,
     GuiLayerPlacement, Hand, Hooks, Host, HostSide, HudMode, IPayloadContext, IPayloadHandler,
-    ItemStack, JavaString, LivingRef, PayloadBytes, PayloadHandleError, PayloadId,
+    Identifier, ItemStack, JavaString, LivingRef, PayloadBytes, PayloadHandleError, PayloadId,
     PlayerLoggedInEvent, PlayerLoggedOutEvent, PlayerRef, PlayerTickPostEvent,
     RegisterClientTooltipComponentFactoriesEvent, RegisterDebugEntriesEvent,
     RegisterGuiLayersEvent, Registrar, RegistrationContext, RenderTooltipGatherComponentsEvent,
-    ServerHost, ServerTickEvent, ServerTickPhase, SettingSpec, Tag, Text, TooltipComponent,
-    TooltipComponentData, TooltipElement, TooltipFont,
+    ServerHost, ServerTickEvent, ServerTickPhase, SettingKey, SettingSpec, Tag, Text,
+    TooltipComponent, TooltipComponentData, TooltipElement, TooltipFont,
 };
 use rules::{BarState, Body, Flash, Held, Offsets, Settings, Sprite};
 
@@ -34,14 +35,20 @@ const FOOD: &str = "minecraft:food";
 const CONSUMABLE: &str = "minecraft:consumable";
 const TOOLTIP_DISPLAY: &str = "minecraft:tooltip_display";
 const NATURAL_REGENERATION_RULE: &str = "minecraft:natural_health_regeneration";
-/// Where both bars start above the screen's bottom edge, before vanilla's layers move them
-/// (`Gui.leftHeight` and `rightHeight`).
+/// Where both bars start above the screen's bottom edge before any layer has moved them: the
+/// hotbar and the experience bar (`Gui.leftHeight` and `rightHeight`).
 const BAR_HEIGHT: i32 = 39;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// The keys `register_settings` was issued, by setting name; rebuilt on each registration.
+static KEYS: Mutex<Option<HashMap<&'static str, SettingKey>>> = Mutex::new(None);
+/// How far above the screen's bottom edge the health row and the food row draw this frame
+/// (`gui_status_heights`, noted by the layers beneath them).
+static LEFT_HEIGHT: AtomicI32 = AtomicI32::new(BAR_HEIGHT);
+static RIGHT_HEIGHT: AtomicI32 = AtomicI32::new(BAR_HEIGHT);
 static OFFSETS: Mutex<Option<Offsets>> = Mutex::new(None);
 static FLASH: Mutex<Option<Flash>> = Mutex::new(None);
 /// The held-food query of the last HUD tick it ran for.
@@ -61,22 +68,33 @@ struct Synced {
 
 /// The client options (`ModConfig.CLIENT`), as the player set them in Options > Mods.
 fn settings(host: &dyn ClientHost) -> Settings {
-    Settings::read(|key| host.setting_bool(key), |key| host.setting_f64(key))
+    let keys = lock(&KEYS);
+    let key = |name: &str| keys.as_ref().and_then(|keys| keys.get(name)).copied();
+    Settings::read(
+        |name| key(name).and_then(|key| host.setting_bool(key).ok()),
+        |name| key(name).and_then(|key| host.setting_f64(key).ok()),
+    )
 }
 
 /// The options on the mod's page, labelled and explained as the original's config screen does.
 fn register_settings(r: &mut dyn Registrar) {
     let label = |name: &str| format!("appleskin.configuration.{name}");
     let tooltip = |name: &str| format!("appleskin.configuration.{name}.tooltip");
+    let mut keys = HashMap::new();
     for (key, name, default) in rules::TOGGLES {
-        let _ = r.register_setting(
-            SettingSpec::toggle(key, label(name), default).tooltip(tooltip(name)),
-        );
+        if let Ok(issued) = r
+            .register_setting(SettingSpec::toggle(key, label(name), default).tooltip(tooltip(name)))
+        {
+            keys.insert(key, issued);
+        }
     }
     let (key, name, default) = rules::FLASH_ALPHA;
-    let _ = r.register_setting(
+    if let Ok(issued) = r.register_setting(
         SettingSpec::range(key, label(name), 0.0, 1.0, 0.05, default).tooltip(tooltip(name)),
-    );
+    ) {
+        keys.insert(key, issued);
+    }
+    *lock(&KEYS) = Some(keys);
 }
 
 // ---- reading the stack ----------------------------------------------------------------------
@@ -174,13 +192,17 @@ fn hud(host: &dyn ClientHost, draw: &dyn DrawContext) -> Option<Hud> {
 }
 
 impl Hud {
-    /// `isMountHealthShown`: riding a living vehicle replaces the food bar with its health.
+    /// `isMountHealthShown`: riding a living vehicle that shows hearts replaces the food bar
+    /// with its health (`Gui.getVehicleMaxHearts` is not zero).
     fn on_living_mount(&self, host: &dyn ClientHost) -> bool {
-        self.player
-            .entity()
-            .vehicle(host)
-            .and_then(|vehicle| host.living(vehicle))
-            .is_some()
+        let Some(vehicle) = self.player.entity().vehicle(host) else {
+            return false;
+        };
+        vehicle.shows_vehicle_health(host) == Some(true)
+            && host
+                .living(vehicle)
+                .and_then(|living| living.max_health(host))
+                .is_some_and(|max| (max + 0.5) as i32 / 2 != 0)
     }
 
     fn bar_state(&self, host: &dyn ClientHost, animations: bool) -> BarState {
@@ -255,9 +277,21 @@ mod layers {
     const PLAYER_HEALTH: &str = "minecraft:player_health";
     const FOOD_LEVEL: &str = "minecraft:food_level";
 
-    /// The anchor of both bars, in GUI pixels from the top of the screen.
-    fn bar_y(hud: &Hud) -> i32 {
-        hud.top - BAR_HEIGHT
+    /// The top of the health row, in GUI pixels from the top of the screen.
+    fn left_y(hud: &Hud) -> i32 {
+        hud.top - LEFT_HEIGHT.load(Ordering::Relaxed)
+    }
+
+    /// The top of the food row.
+    fn right_y(hud: &Hud) -> i32 {
+        hud.top - RIGHT_HEIGHT.load(Ordering::Relaxed)
+    }
+
+    /// Notes the height the health row draws at, from a layer beneath it.
+    fn note_left(host: &dyn ClientHost, _: &mut dyn DrawContext) {
+        if let Some([left, _]) = host.gui_status_heights() {
+            LEFT_HEIGHT.store(left, Ordering::Relaxed);
+        }
     }
 
     /// `HealthOverlay`: the hearts the held food would heal.
@@ -306,9 +340,9 @@ mod layers {
                     health,
                     modified,
                     hud.left,
-                    bar_y(&hud),
+                    left_y(&hud),
                     flash().alpha,
-                    false,
+                    level.is_hardcore(host) == Some(true),
                     &o.health,
                 )
             });
@@ -332,7 +366,7 @@ mod layers {
                 held.food.nutrition,
                 hud.food_level,
                 hud.right,
-                bar_y(&hud),
+                right_y(&hud),
                 flash().alpha,
                 held.rotten,
                 &o.food,
@@ -348,7 +382,7 @@ mod layers {
         if hud.on_living_mount(host) || !settings.saturation_overlay {
             return;
         }
-        let y = bar_y(&hud);
+        let y = right_y(&hud);
         let mut sprites = hud.offsets(host, &settings, |o| {
             rules::saturation_sprites(0.0, hud.saturation, hud.right, y, 1.0, &o.food)
         });
@@ -378,17 +412,26 @@ mod layers {
 
     /// `ExhaustionOverlay`: the bar behind the food icons.
     fn exhaustion(host: &dyn ClientHost, draw: &mut dyn DrawContext) {
+        // Beneath the food row, so it sees the height that row draws at.
+        if let Some([_, right]) = host.gui_status_heights() {
+            RIGHT_HEIGHT.store(right, Ordering::Relaxed);
+        }
         let settings = settings(host);
         let Some(hud) = hud(host, draw) else { return };
         if hud.on_living_mount(host) || !settings.exhaustion_underlay {
             return;
         }
-        let sprite = rules::exhaustion_sprite(hud.exhaustion, hud.right, bar_y(&hud));
+        let sprite = rules::exhaustion_sprite(hud.exhaustion, hud.right, right_y(&hud));
         draw_sprites(draw, &[sprite]);
     }
 
     pub(super) fn register(event: &mut RegisterGuiLayersEvent<'_>) {
         let above = |id: &str| GuiLayerPlacement::Above(id.to_owned());
+        event.layers.register(
+            "appleskin:health_height".into(),
+            GuiLayerPlacement::Below(PLAYER_HEALTH.to_owned()),
+            Box::new(note_left),
+        );
         event.layers.register(
             "appleskin:health_restored".into(),
             above(PLAYER_HEALTH),
@@ -574,10 +617,14 @@ impl Hooks for Mod {
         _: &RegistrationContext,
         event: &mut RegisterDebugEntriesEvent<'_>,
     ) {
+        // The line has a group of its own, as the original adds it after the vanilla lines.
+        let Ok(group) = Identifier::parse("appleskin:food_stats") else {
+            return;
+        };
         event.entries.push(
             DebugEntry::text(
                 "appleskin:food_stats".into(),
-                DebugGroup::Position,
+                DebugGroup::Named(group),
                 |host, lines| {
                     let Some(player) = host.local_player() else {
                         return;
