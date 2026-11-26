@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! AppleSkin for Sunrise: the HUD shows what the held food restores, the saturation and the
 //! exhaustion behind the hunger bar, and food tooltips show their hunger and saturation.
 //!
@@ -9,15 +10,18 @@
 //! | `register_client_tooltip_component_factories` | [`ClientFoodTooltip`] | the hunger and saturation rows |
 //! | `client_tick_post` | this module | the flashing alpha |
 //! | `player_tick_post`, `player_logged_in`, `server_tick` | [`sync`] | saturation, exhaustion and natural regeneration sent to clients |
+//! | `client_tick_post` | [`events`] | `FoodValuesEvent` and `HudOverlayEvent` posted for other mods |
 //! | `register_debug_entries` | this module | the `hunger, sat, exh` line of the debug screen |
 //! | `register` | this module | the client options, on the mod's page in Options > Mods |
 
+pub mod events;
 pub mod rules;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use events::{FoodValuesEvent, Hidden, HudOverlayEvent, Overlay};
 use mod_api::{
     ClientHost, ClientPlayerLoggingInEvent, ClientTickPostEvent, ClientTooltipComponent, Component,
     DebugEntry, DebugGroup, DrawContext, EffectCategory, Flow, GameMode, GameRuleValue,
@@ -49,6 +53,10 @@ static KEYS: Mutex<Option<HashMap<&'static str, SettingKey>>> = Mutex::new(None)
 /// (`gui_status_heights`, noted by the layers beneath them).
 static LEFT_HEIGHT: AtomicI32 = AtomicI32::new(BAR_HEIGHT);
 static RIGHT_HEIGHT: AtomicI32 = AtomicI32::new(BAR_HEIGHT);
+/// The held food after listeners changed it, and the overlays they hid, as of the last client
+/// tick; `None` until the first tick has posted the events.
+static POSTED: Mutex<Option<Option<Held>>> = Mutex::new(None);
+static HIDDEN: Mutex<Option<Hidden>> = Mutex::new(None);
 static OFFSETS: Mutex<Option<Offsets>> = Mutex::new(None);
 static FLASH: Mutex<Option<Flash>> = Mutex::new(None);
 /// The held-food query of the last HUD tick it ran for.
@@ -231,29 +239,80 @@ impl Hud {
         )
     }
 
-    /// `HeldFoodCache.result`: the food in hand that the player could eat, asked once a HUD tick.
+    /// `HeldFoodCache.result`: the food in hand that the player could eat, as the last client
+    /// tick posted it to listeners; asked once a HUD tick before that tick has run.
     fn held(&self, host: &dyn ClientHost, settings: &Settings) -> Option<Held> {
+        if let Some(posted) = lock(&POSTED).as_ref() {
+            return posted.clone();
+        }
         let mut cache = lock(&HELD);
         if let Some((tick, held)) = cache.as_ref()
             && *tick == self.tick
         {
             return held.clone();
         }
-        let query = |hand: Hand| {
-            let held = self
-                .living
-                .with_hand_item(host, hand, |view| view.project())
-                .flatten()
-                .and_then(|stack| held_food(host, &stack))?;
-            (self.player.can_eat(host, held.food.can_always_eat) == Some(true)).then_some(held)
-        };
-        let mut held = query(Hand::Main);
-        if held.is_none() && settings.food_overlay_offhand {
-            held = query(Hand::Off);
-        }
+        let held = query_held(host, &self.player, &self.living, settings).map(|(held, _)| held);
         *cache = Some((self.tick, held.clone()));
         held
     }
+}
+
+/// The food the player holds and could eat, and whether it is in the off hand.
+fn query_held(
+    host: &dyn ClientHost,
+    player: &PlayerRef,
+    living: &LivingRef,
+    settings: &Settings,
+) -> Option<(Held, bool)> {
+    let query = |hand: Hand| {
+        let held = living
+            .with_hand_item(host, hand, |view| view.project())
+            .flatten()
+            .and_then(|stack| held_food(host, &stack))?;
+        (player.can_eat(host, held.food.can_always_eat) == Some(true)).then_some(held)
+    };
+    if let Some(held) = query(Hand::Main) {
+        return Some((held, false));
+    }
+    if settings.food_overlay_offhand {
+        return query(Hand::Off).map(|held| (held, true));
+    }
+    None
+}
+
+/// Whether a listener of [`HudOverlayEvent`] hid `overlay` on the last tick.
+fn hidden(overlay: Overlay) -> bool {
+    lock(&HIDDEN)
+        .as_ref()
+        .is_some_and(|hidden| hidden.is(overlay))
+}
+
+/// Posts [`HudOverlayEvent`] for each overlay and [`FoodValuesEvent`] for the held food, and
+/// keeps what the listeners left for the layers to draw.
+fn post_events(host: &mut dyn ClientHost) {
+    let settings = settings(&*host);
+    let mut hidden = Hidden::default();
+    let mut posted = None;
+    if let Some(player) = host.local_player()
+        && let Some(living) = host.living(player.entity())
+        && let Some(food) = player.food(&*host)
+    {
+        for overlay in Overlay::ALL {
+            let mut event = HudOverlayEvent::new(overlay, food.saturation, food.exhaustion);
+            host.post(&mut event);
+            hidden.set(overlay, event.cancelled);
+        }
+        if let Some((mut held, offhand)) = query_held(&*host, &player, &living, &settings) {
+            let mut event =
+                FoodValuesEvent::new(offhand, held.food.nutrition, held.food.saturation);
+            host.post(&mut event);
+            held.food.nutrition = event.modified_nutrition;
+            held.food.saturation = event.modified_saturation;
+            posted = Some(held);
+        }
+    }
+    *lock(&HIDDEN) = Some(hidden);
+    *lock(&POSTED) = Some(posted);
 }
 
 fn draw_sprites(draw: &mut dyn DrawContext, sprites: &[Sprite]) {
@@ -298,7 +357,7 @@ mod layers {
     fn health(host: &dyn ClientHost, draw: &mut dyn DrawContext) {
         let settings = settings(host);
         let Some(hud) = hud(host, draw) else { return };
-        if hud.on_living_mount(host) {
+        if hidden(Overlay::HealthRestored) || hud.on_living_mount(host) {
             return;
         }
         // An offsets size of zero disables the overlay when health is infinite.
@@ -354,7 +413,7 @@ mod layers {
     fn hunger(host: &dyn ClientHost, draw: &mut dyn DrawContext) {
         let settings = settings(host);
         let Some(hud) = hud(host, draw) else { return };
-        if hud.on_living_mount(host) || !settings.food_overlay {
+        if hidden(Overlay::HungerRestored) || hud.on_living_mount(host) || !settings.food_overlay {
             return;
         }
         let Some(held) = hud.held(host, &settings) else {
@@ -379,7 +438,8 @@ mod layers {
     fn saturation(host: &dyn ClientHost, draw: &mut dyn DrawContext) {
         let settings = settings(host);
         let Some(hud) = hud(host, draw) else { return };
-        if hud.on_living_mount(host) || !settings.saturation_overlay {
+        if hidden(Overlay::Saturation) || hud.on_living_mount(host) || !settings.saturation_overlay
+        {
             return;
         }
         let y = right_y(&hud);
@@ -418,7 +478,8 @@ mod layers {
         }
         let settings = settings(host);
         let Some(hud) = hud(host, draw) else { return };
-        if hud.on_living_mount(host) || !settings.exhaustion_underlay {
+        if hidden(Overlay::Exhaustion) || hud.on_living_mount(host) || !settings.exhaustion_underlay
+        {
             return;
         }
         let sprite = rules::exhaustion_sprite(hud.exhaustion, hud.right, right_y(&hud));
@@ -644,6 +705,7 @@ impl Hooks for Mod {
     }
 
     fn client_tick_post(&self, host: &mut dyn ClientHost, _: &mut ClientTickPostEvent) {
+        post_events(host);
         let max = settings(&*host).max_flash_alpha;
         lock(&FLASH).get_or_insert_with(Flash::default).step(max);
     }
@@ -712,6 +774,7 @@ impl Hooks for Mod {
     }
 
     fn client_player_logging_in(&self, _: &mut dyn ClientHost, _: &mut ClientPlayerLoggingInEvent) {
+        *lock(&POSTED) = None;
         *lock(&SYNCED) = Synced {
             saturation: None,
             exhaustion: None,

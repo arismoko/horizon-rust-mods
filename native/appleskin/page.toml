@@ -14,7 +14,7 @@ What it does:
 
 Differences from the original:
 
-- There are no events for other mods ([sunrise-org/sunrise#5137](https://github.com/sunrise-org/sunrise/issues/5137)).
+- Other mods hear `appleskin:food_values` and `appleskin:hud_overlay` events, the typed counterparts of the original's `FoodValuesEvent` and `HUDOverlayEvent`. There is no tooltip event: the tooltip rows always show the food's own values.
 """
 categories = ["utility"]
 
