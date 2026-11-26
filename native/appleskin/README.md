@@ -15,7 +15,8 @@ A port of [AppleSkin](https://github.com/squeek502/AppleSkin) by squeek502 to [S
 - **Debug screen.** A `hunger, sat, exh` line.
 - **Sync.** The server sends each client its exact saturation and exhaustion, and whether natural regeneration is on.
 - The original's options on the mod's page in Options > Mods, applied as you change them.
+- **Events for other mods.** `appleskin::events::FoodValuesEvent` (`appleskin:food_values`, client) lets a listener change the hunger and saturation the HUD shows for the held food; `HudOverlayEvent` (`appleskin:hud_overlay`, client, cancellable) lets a listener hide the hunger, saturation, exhaustion or health overlay. Both are posted once per client tick. Subscribe with `#[subscribe]` in a mod that lists AppleSkin under `[dependencies]`.
 
 ## Differences from the original
 
-- The original's events for other mods are not part of this version ([sunrise-org/sunrise#5137](https://github.com/sunrise-org/sunrise/issues/5137)).
+- There is no tooltip event (`TooltipOverlayEvent`): the tooltip rows always show the food's own values, and `FoodValuesEvent` changes only the HUD overlays.
